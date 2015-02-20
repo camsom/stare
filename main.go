@@ -1,10 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"time"
+
+	"stare/synths"
 
 	"code.google.com/p/portaudio-go/portaudio"
 )
@@ -15,13 +16,34 @@ const (
 	sampleRate  = 44100
 	bufferSize  = 2048
 
-	hz = 200
+	hz = 220.0
 
-	int16Max = 1<<15 - 1
+	int16Max = 1<<16 - 1
 )
 
-func Start() error {
-	stream, err := portaudio.OpenDefaultStream(0, 1, sampleRate, bufferSize, processAudio)
+type AudioEngine struct {
+	out []float64
+	syn []synths.Synth
+}
+
+func NewAudioEngine() AudioEngine {
+	return AudioEngine{
+		out: make([]float64, bufferSize),
+	}
+}
+
+func (a *AudioEngine) AddSynth(name string, frequency float64) {
+	f := frequency * math.Exp2((float64(12*0))/12)
+
+	log.Printf("Adding %s synth with %fhz.", name, f)
+	s := synths.NewSine(sampleRate, f)
+	s.AddWave()
+
+	a.syn = append(a.syn, s)
+}
+
+func (a AudioEngine) Start() error {
+	stream, err := portaudio.OpenDefaultStream(0, 1, sampleRate, bufferSize, a.processAudio)
 	if err != nil {
 		return err
 	}
@@ -32,62 +54,22 @@ func Start() error {
 	}
 
 	defer stream.Stop()
-	time.Sleep(5 * time.Second)
+	time.Sleep(100 * time.Second)
 	return nil
 }
 
-func processAudio(out []int16) {
-	sine := NewSine()
-	sine.addWave()
+func (a *AudioEngine) processAudio(out []int16) {
+
+	a.out = make([]float64, bufferSize)
+
+	for _, s := range a.syn {
+		s.Add(a.out)
+	}
+
 	for i := range out {
-		out[i] = int16(math.Min(1.0, math.Max(-1.0, sine.wave[i])) * int16Max)
+		// out[i] = int16(math.Min(1.0, math.Max(-1.0, a.out[i])) * int16Max)
+		out[i] = int16(int16Max * a.out[i])
 	}
-}
-
-type Sine struct {
-	phase float64
-	wave  []float64
-}
-
-func NewSine() Sine {
-	return Sine{
-		phase: 0.0,
-		wave:  make([]float64, bufferSize),
-	}
-}
-
-func sine(x float64) float64 {
-	return float64(math.Sin(2 * math.Pi * float64(x/4)))
-}
-
-func (s *Sine) addWave() {
-	for i := range s.wave {
-		s.wave[i] = s.nextFrameValue()
-	}
-}
-
-func (s *Sine) nextFrameValue() float64 {
-	var frame float64
-	switch {
-	case s.phase <= .25:
-		frame = sine(s.phase * 4)
-	case s.phase <= .50:
-		frame = sine(1 - ((s.phase - .25) * 4))
-	case s.phase <= .75:
-		frame = -sine((s.phase - .50) * 4)
-	case s.phase <= 1.00:
-		frame = -sine((s.phase - .75) * 4)
-	default:
-		log.Fatal("Impossible phase")
-	}
-
-	s.phase += float64(hz) / float64(sampleRate)
-	if s.phase > 1.0 {
-		fmt.Println(int16Max)
-		s.phase = s.phase - 1
-	}
-
-	return frame
 }
 
 func main() {
@@ -97,7 +79,14 @@ func main() {
 	}
 	defer portaudio.Terminate()
 
-	err = Start()
-	log.Println(err)
+	a := NewAudioEngine()
+	// a.AddSynth("sine", 110.0)
+	// a.AddSynth("sine", 580.0)
+	// a.AddSynth("sine", 670.0)
+	a.AddSynth("sine", 300.0)
+
+	if err = a.Start(); err != nil {
+		log.Println(err)
+	}
 
 }
