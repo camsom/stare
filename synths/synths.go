@@ -1,6 +1,7 @@
 package synths
 
 import (
+	"fmt"
 	"log"
 	"math"
 )
@@ -58,6 +59,8 @@ func (s *Synth) nextFrameValue() float64 {
 	if s.phase > 1.0 {
 		s.phase = s.phase - 1
 	}
+
+	fmt.Println(frame)
 
 	return frame
 }
