@@ -20,13 +20,13 @@ const (
 
 	hz = 300.0
 
-	int16Max = 1<<15 - 1
-	// int16Max = 4000
+	int16Max = 4000
 )
 
 var (
-	Midi    *portmidi.Stream
-	MidiSep portmidi.Timestamp
+	Midi         *portmidi.Stream
+	MidiSep      portmidi.Timestamp
+	MidiVelocity int64
 
 	Sin    []float64
 	Square []float64
@@ -69,7 +69,7 @@ func (a AudioEngine) Start() error {
 		return err
 	}
 
-	dur := math.Min(120, math.Max(float64(MidiSep), 150))
+	dur := math.Min(120, math.Max(float64(MidiVelocity), 150))
 	time.Sleep(time.Duration(dur) * time.Millisecond)
 
 	a.stream.Close()
@@ -146,17 +146,7 @@ func (a *AudioEngine) add(out []float64) {
 }
 
 func main() {
-	err := portmidi.Initialize()
-	if err != nil {
-		log.Println(err)
-	}
-
-	Midi, err = NewMidiStream(1, 1024)
-	if err != nil {
-		log.Println(err)
-	}
-
-	err = portaudio.Initialize()
+	err := portaudio.Initialize()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -164,18 +154,35 @@ func main() {
 
 	a := NewAudioEngine()
 
-	go func() {
+	err = portmidi.Initialize()
+	if err != nil {
+		log.Println(err)
+	}
+
+	Midi, err = NewMidiStream(1, 1024)
+	if err == nil {
 		lasttime := portmidi.Timestamp(0)
+
 		for event := range Midi.Listen() {
+			Sin = staticSine(25 * float64(event.Data1))
+			Square = staticSquare(25 * float64(event.Data1))
+
 			MidiSep = event.Timestamp - lasttime
-			if MidiSep > 100 && event.Data2 >= 0 {
-				Sin = staticSine(25 * float64(event.Data1))
-				Square = staticSquare(25 * float64(event.Data1))
+			MidiVelocity = event.Data2
+
+			if MidiSep > 100 && MidiVelocity >= 0 {
 				if err = a.Start(); err != nil {
 					log.Println(err)
 				}
 			}
 			lasttime = event.Timestamp
 		}
-	}()
+	} else {
+		log.Println(err)
+		Sin = staticSquare(25 * float64(10))
+
+		if err = a.Start(); err != nil {
+			log.Println(err)
+		}
+	}
 }
